@@ -1,0 +1,762 @@
+{
+  "info": {
+    "name": "Vital - saas-agenda (Incremento 2)",
+    "description": "Pruebas automatizadas CU-18 (estados cerrados, bloqueo de fechas pasadas, horarios clínica/especialista con validación contra citas futuras, disponibilidad GMT-6), CU-10 y KPIs CU-16.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8083" },
+    { "key": "jwtSigningKey", "value": "VitalIdentityDevSigningKeyChangeInProd2026!" },
+    { "key": "createdAppointmentId", "value": "" },
+    { "key": "createdExceptionId", "value": "" }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "function base64url(source) {",
+          "  let encoded = CryptoJS.enc.Base64.stringify(source);",
+          "  encoded = encoded.replace(/=+$/, '');",
+          "  encoded = encoded.replace(/\\+/g, '-');",
+          "  encoded = encoded.replace(/\\//g, '_');",
+          "  return encoded;",
+          "}",
+          "function signJwt(payload, secret) {",
+          "  const header = { alg: 'HS256', typ: 'JWT' };",
+          "  const now = Math.floor(Date.now() / 1000);",
+          "  const fullPayload = Object.assign({",
+          "    iss: 'saas-identity',",
+          "    aud: 'vital-saas',",
+          "    jti: pm.variables.replaceIn('{{$guid}}'),",
+          "    iat: now,",
+          "    nbf: now - 5,",
+          "    exp: now + 900",
+          "  }, payload);",
+          "  const encodedHeader = base64url(CryptoJS.enc.Utf8.parse(JSON.stringify(header)));",
+          "  const encodedData = base64url(CryptoJS.enc.Utf8.parse(JSON.stringify(fullPayload)));",
+          "  const token = encodedHeader + '.' + encodedData;",
+          "  const signature = base64url(CryptoJS.HmacSHA256(token, secret));",
+          "  return token + '.' + signature;",
+          "}",
+          "function formatGmt6Date(dateObj) {",
+          "  const y = dateObj.getUTCFullYear();",
+          "  const m = String(dateObj.getUTCMonth() + 1).padStart(2, '0');",
+          "  const d = String(dateObj.getUTCDate()).padStart(2, '0');",
+          "  return y + '-' + m + '-' + d;",
+          "}",
+          "const gmt6Now = new Date(Date.now() - 6 * 3600 * 1000);",
+          "const dow = gmt6Now.getUTCDay();",
+          "let daysUntilMonday = (1 - dow + 7) % 7;",
+          "if (daysUntilMonday === 0) daysUntilMonday = 7;",
+          "const nextMonday = new Date(gmt6Now.getTime() + daysUntilMonday * 86400000);",
+          "const nextSunday = new Date(nextMonday.getTime() + 6 * 86400000);",
+          "const secondMonday = new Date(nextMonday.getTime() + 7 * 86400000);",
+          "const yesterday = new Date(gmt6Now.getTime() - 86400000);",
+          "pm.variables.set('nextMondayDate', formatGmt6Date(nextMonday));",
+          "pm.variables.set('nextSundayDate', formatGmt6Date(nextSunday));",
+          "pm.variables.set('secondMondayDate', formatGmt6Date(secondMonday));",
+          "pm.variables.set('yesterdayDate', formatGmt6Date(yesterday));",
+          "const key = pm.variables.get('jwtSigningKey') || 'VitalIdentityDevSigningKeyChangeInProd2026!';",
+          "pm.variables.set('adminNorteToken', signJwt({ sub: '20000000-0000-0000-0000-000000000002', tenant_id: '10000000-0000-0000-0000-000000000001', role: 'ADMIN_CLINICA', full_name: 'Lic. Mariana Paredes', email: 'admin@norte.vital.demo' }, key));",
+          "pm.variables.set('auxNorteToken', signJwt({ sub: '20000000-0000-0000-0000-000000000005', tenant_id: '10000000-0000-0000-0000-000000000001', role: 'AUXILIAR', full_name: 'Enf. Clara Ramírez', email: 'aux.ramirez@norte.vital.demo' }, key));",
+          "pm.variables.set('mendozaToken', signJwt({ sub: '20000000-0000-0000-0000-000000000003', tenant_id: '10000000-0000-0000-0000-000000000001', role: 'ESPECIALISTA', full_name: 'Dra. Sofía Mendoza', email: 'dra.mendoza@norte.vital.demo' }, key));",
+          "pm.variables.set('superAdminToken', signJwt({ sub: '20000000-0000-0000-0000-000000000001', role: 'SUPER_ADMIN', full_name: 'Operador Plataforma SaaS', email: 'superadmin@vital.demo' }, key));",
+          "pm.variables.set('adminValleToken', signJwt({ sub: '20000000-0000-0000-0000-000000000007', tenant_id: '10000000-0000-0000-0000-000000000002', role: 'ADMIN_CLINICA', full_name: 'Ing. Rodrigo Téllez', email: 'admin@valle.vital.demo' }, key));"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "01. Health check y PostgreSQL",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Health retorna 200 Healthy con DB conectada en GMT-6', () => {",
+              "  pm.response.to.have.status(200);",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.status).to.eql('Healthy');",
+              "  pm.expect(body.service).to.eql('saas-agenda');",
+              "  pm.expect(body.database).to.eql('Connected');",
+              "  pm.expect(body.timestampGmt6).to.include('-06:00');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/health"
+      }
+    },
+    {
+      "name": "01b. Liveness probe (/health/live)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Liveness retorna 200 Healthy sin depender de DB', () => {",
+              "  pm.response.to.have.status(200);",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.status).to.eql('Healthy');",
+              "  pm.expect(body.service).to.eql('saas-agenda');",
+              "  pm.expect(body.probe).to.eql('live');",
+              "  pm.expect(body.scope).to.eql('process-only');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/health/live"
+      }
+    },
+    {
+      "name": "01c. Readiness probe (/health/ready)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Readiness retorna 200 Healthy con PostgreSQL Connected', () => {",
+              "  pm.response.to.have.status(200);",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.status).to.eql('Healthy');",
+              "  pm.expect(body.service).to.eql('saas-agenda');",
+              "  pm.expect(body.probe).to.eql('ready');",
+              "  pm.expect(body.database).to.eql('Connected');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/health/ready"
+      }
+    },
+    {
+      "name": "02. Documento OpenAPI v1 documenta citas, horarios y métricas",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('OpenAPI v1 documenta las 12 rutas (14 endpoints)', () => {",
+              "  pm.response.to.have.status(200);",
+              "  const spec = pm.response.json();",
+              "  pm.expect(spec.paths).to.have.property('/v1/appointments');",
+              "  pm.expect(spec.paths).to.have.property('/v1/schedules/clinic');",
+              "  pm.expect(spec.paths).to.have.property('/v1/schedules/specialists/{specialistId}');",
+              "  pm.expect(spec.paths).to.have.property('/v1/schedules/specialists/{specialistId}/exceptions');",
+              "  pm.expect(spec.paths).to.have.property('/v1/schedules/specialists/{specialistId}/availability');",
+              "  pm.expect(spec.paths).to.have.property('/v1/metrics/clinic/activity');",
+              "  pm.expect(spec.paths).to.have.property('/v1/metrics/platform/activity');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/openapi/v1.json"
+      }
+    },
+    {
+      "name": "03. Sin token JWT rechazado (401)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Endpoint protegido sin token responde 401', () => {",
+              "  pm.response.to.have.status(401);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/v1/appointments"
+      }
+    },
+    {
+      "name": "04. CU-10: SuperAdmin bloqueado en agenda clínica (403)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('SuperAdmin recibe 403 FORBIDDEN_AGENDA_ROLE', () => {",
+              "  pm.response.to.have.status(403);",
+              "  pm.expect(pm.response.json().code).to.eql('FORBIDDEN_AGENDA_ROLE');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{superAdminToken}}" }],
+        "url": "{{baseUrl}}/v1/appointments"
+      }
+    },
+    {
+      "name": "05. CU-15: Clínica suspendida bloqueada (403 TENANT_SUSPENDED)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Clínica suspendida devuelve 403 TENANT_SUSPENDED', () => {",
+              "  pm.response.to.have.status(403);",
+              "  pm.expect(pm.response.json().code).to.eql('TENANT_SUSPENDED');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{adminValleToken}}" }],
+        "url": "{{baseUrl}}/v1/appointments"
+      }
+    },
+    {
+      "name": "06. AdminClinica lista todas las citas de clinica-norte",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('AdminClinica ve las 3 citas demo de clinica-norte', () => {",
+              "  pm.response.to.have.status(200);",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.total).to.be.at.least(3);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{adminNorteToken}}" }],
+        "url": "{{baseUrl}}/v1/appointments"
+      }
+    },
+    {
+      "name": "07. Auxiliar lista solo citas en ámbito autorizado",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Auxiliar ve PAT-0101 y PAT-0103 pero excluye PAT-0102 fuera de ámbito', () => {",
+              "  pm.response.to.have.status(200);",
+              "  const body = pm.response.json();",
+              "  const patIds = body.items.map(i => i.patientId);",
+              "  pm.expect(patIds).to.include('30000000-0000-0000-0000-000000000101');",
+              "  pm.expect(patIds).to.include('30000000-0000-0000-0000-000000000103');",
+              "  pm.expect(patIds).to.not.include('30000000-0000-0000-0000-000000000102');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{auxNorteToken}}" }],
+        "url": "{{baseUrl}}/v1/appointments"
+      }
+    },
+    {
+      "name": "08. Especialista lista únicamente su propia agenda",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Dra. Mendoza solo ve citas asignadas a su ID', () => {",
+              "  pm.response.to.have.status(200);",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.total).to.be.at.least(1);",
+              "  body.items.forEach(item => {",
+              "    pm.expect(item.specialistId).to.eql('20000000-0000-0000-0000-000000000003');",
+              "  });",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{mendozaToken}}" }],
+        "url": "{{baseUrl}}/v1/appointments"
+      }
+    },
+    {
+      "name": "09. D-AG-02: Cita en fecha pasada rechazada (400 PAST_SCHEDULE_NOT_ALLOWED)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Fecha pasada responde 400 PAST_SCHEDULE_NOT_ALLOWED', () => {",
+              "  pm.response.to.have.status(400);",
+              "  pm.expect(pm.response.json().code).to.eql('PAST_SCHEDULE_NOT_ALLOWED');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{adminNorteToken}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"patientId\": \"30000000-0000-0000-0000-000000000101\",\n  \"specialistId\": \"20000000-0000-0000-0000-000000000003\",\n  \"scheduledStartGmt6\": \"{{yesterdayDate}}T10:00:00-06:00\",\n  \"durationMinutes\": 30,\n  \"reason\": \"Intento en fecha pasada\"\n}"
+        },
+        "url": "{{baseUrl}}/v1/appointments"
+      }
+    },
+    {
+      "name": "10. D-AG-03: Cita fuera de horario de Dra. Mendoza en pausa 15:15 (409 OUTSIDE_WORKING_HOURS)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Horario en pausa 15:00-16:00 de Dra. Mendoza responde 409 OUTSIDE_WORKING_HOURS', () => {",
+              "  pm.response.to.have.status(409);",
+              "  pm.expect(pm.response.json().code).to.eql('OUTSIDE_WORKING_HOURS');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{adminNorteToken}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"patientId\": \"30000000-0000-0000-0000-000000000101\",\n  \"specialistId\": \"20000000-0000-0000-0000-000000000003\",\n  \"scheduledStartGmt6\": \"{{secondMondayDate}}T15:15:00-06:00\",\n  \"durationMinutes\": 30,\n  \"reason\": \"Intento en hora de comida\"\n}"
+        },
+        "url": "{{baseUrl}}/v1/appointments"
+      }
+    },
+    {
+      "name": "11. CU-18 A2: Empalme contra cita semilla del próximo lunes rechazado (409)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Empalme con cita semilla 10:00-10:30 responde 409 SCHEDULE_CONFLICT', () => {",
+              "  pm.response.to.have.status(409);",
+              "  pm.expect(pm.response.json().code).to.eql('SCHEDULE_CONFLICT');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{adminNorteToken}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"patientId\": \"30000000-0000-0000-0000-000000000102\",\n  \"specialistId\": \"20000000-0000-0000-0000-000000000003\",\n  \"scheduledStartGmt6\": \"{{nextMondayDate}}T10:15:00-06:00\",\n  \"durationMinutes\": 30,\n  \"reason\": \"Empalme contra cita semilla\"\n}"
+        },
+        "url": "{{baseUrl}}/v1/appointments"
+      }
+    },
+    {
+      "name": "12. Auxiliar consulta disponibilidad de Dr. Salazar en lunes futuro (200)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Disponibilidad devuelve bloques laborales y huecos libres sin PII', () => {",
+              "  pm.response.to.have.status(200);",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.source).to.eql('SPECIALIST_SCHEDULE');",
+              "  pm.expect(body.isUnavailable).to.eql(false);",
+              "  pm.expect(body.availableSlots.length).to.be.at.least(10);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{auxNorteToken}}" }],
+        "url": "{{baseUrl}}/v1/schedules/specialists/20000000-0000-0000-0000-000000000004/availability?dateGmt6={{secondMondayDate}}&durationMinutes=30"
+      }
+    },
+    {
+      "name": "13. Auxiliar crea cita en PAT-0104 con permiso excepcional (201)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Cita creada en estado PROGRAMADA GMT-6', () => {",
+              "  pm.response.to.have.status(201);",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.status).to.eql('PROGRAMADA');",
+              "  pm.collectionVariables.set('createdAppointmentId', body.id);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{auxNorteToken}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"patientId\": \"30000000-0000-0000-0000-000000000104\",\n  \"specialistId\": \"20000000-0000-0000-0000-000000000004\",\n  \"scheduledStartGmt6\": \"{{secondMondayDate}}T13:00:00-06:00\",\n  \"durationMinutes\": 30,\n  \"reason\": \"Consulta por cobertura excepcional\"\n}"
+        },
+        "url": "{{baseUrl}}/v1/appointments"
+      }
+    },
+    {
+      "name": "14. Reprogramar y cancelar cita recién creada liberando bloque",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Reprogramación a 14:00-14:45 GMT-6 responde 200', () => {",
+              "  pm.response.to.have.status(200);",
+              "  pm.expect(pm.response.json().durationMinutes).to.eql(45);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{auxNorteToken}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"scheduledStartGmt6\": \"{{secondMondayDate}}T14:00:00-06:00\",\n  \"durationMinutes\": 45,\n  \"note\": \"Reprogramación en jornada de Salazar\"\n}"
+        },
+        "url": "{{baseUrl}}/v1/appointments/{{createdAppointmentId}}/reschedule"
+      }
+    },
+    {
+      "name": "15. Cancelar cita recién creada (libera bloque para repetibilidad)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Cita pasa a CANCELADA', () => {",
+              "  pm.response.to.have.status(200);",
+              "  pm.expect(pm.response.json().status).to.eql('CANCELADA');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "PATCH",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{auxNorteToken}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"nextStatus\": \"CANCELADA\"\n}"
+        },
+        "url": "{{baseUrl}}/v1/appointments/{{createdAppointmentId}}/status"
+      }
+    },
+    {
+      "name": "16. D-AG-03: Consultar horario base de clínica (200)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Horario de clínica retorna configurado con bloques semanales', () => {",
+              "  pm.response.to.have.status(200);",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.configured).to.eql(true);",
+              "  pm.expect(body.slots.length).to.be.at.least(5);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{auxNorteToken}}" }],
+        "url": "{{baseUrl}}/v1/schedules/clinic"
+      }
+    },
+    {
+      "name": "17. Auxiliar bloqueado al intentar editar horario de clínica (403)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Auxiliar recibe 403 FORBIDDEN_SCHEDULE_ROLE', () => {",
+              "  pm.response.to.have.status(403);",
+              "  pm.expect(pm.response.json().code).to.eql('FORBIDDEN_SCHEDULE_ROLE');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{auxNorteToken}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"slots\": [{ \"dayOfWeek\": \"MONDAY\", \"startTime\": \"08:00\", \"endTime\": \"18:00\" }]\n}"
+        },
+        "url": "{{baseUrl}}/v1/schedules/clinic"
+      }
+    },
+    {
+      "name": "18. Especialista bloqueada editando horario de otro especialista (403)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Dra. Mendoza recibe 403 FORBIDDEN_SCHEDULE_SCOPE al editar horario de Dr. Salazar', () => {",
+              "  pm.response.to.have.status(403);",
+              "  pm.expect(pm.response.json().code).to.eql('FORBIDDEN_SCHEDULE_SCOPE');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{mendozaToken}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"useClinicFallback\": true,\n  \"slots\": []\n}"
+        },
+        "url": "{{baseUrl}}/v1/schedules/specialists/20000000-0000-0000-0000-000000000004"
+      }
+    },
+    {
+      "name": "19. Bloqueo al recortar horario propio dejando cita semilla fuera (409)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Recorte de lunes que deja fuera la cita 10:00 responde 409 SCHEDULE_CHANGE_CONFLICTS_WITH_APPOINTMENTS', () => {",
+              "  pm.response.to.have.status(409);",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.code).to.eql('SCHEDULE_CHANGE_CONFLICTS_WITH_APPOINTMENTS');",
+              "  pm.expect(body.conflictingCount).to.be.at.least(1);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{mendozaToken}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"useClinicFallback\": false,\n  \"slots\": [{ \"dayOfWeek\": \"MONDAY\", \"startTime\": \"12:00\", \"endTime\": \"15:00\" }]\n}"
+        },
+        "url": "{{baseUrl}}/v1/schedules/specialists/20000000-0000-0000-0000-000000000003"
+      }
+    },
+    {
+      "name": "20. Bloqueo al marcar día inhábil donde existe cita activa (409)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Excepción inhábil en fecha con cita activa responde 409 SCHEDULE_CHANGE_CONFLICTS_WITH_APPOINTMENTS', () => {",
+              "  pm.response.to.have.status(409);",
+              "  pm.expect(pm.response.json().code).to.eql('SCHEDULE_CHANGE_CONFLICTS_WITH_APPOINTMENTS');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{mendozaToken}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"dateGmt6\": \"{{nextMondayDate}}\",\n  \"isUnavailable\": true,\n  \"reason\": \"Intento de cierre con cita ya programada\"\n}"
+        },
+        "url": "{{baseUrl}}/v1/schedules/specialists/20000000-0000-0000-0000-000000000003/exceptions"
+      }
+    },
+    {
+      "name": "21. Especialista registra guardia especial en domingo libre (200)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Excepción dominical creada en horario custom 10:00-13:00', () => {",
+              "  pm.response.to.have.status(200);",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.isUnavailable).to.eql(false);",
+              "  pm.expect(body.customStartTime).to.eql('10:00');",
+              "  pm.collectionVariables.set('createdExceptionId', body.id);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{mendozaToken}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"dateGmt6\": \"{{nextSundayDate}}\",\n  \"isUnavailable\": false,\n  \"customStartTime\": \"10:00\",\n  \"customEndTime\": \"13:00\",\n  \"reason\": \"Guardia especial de cardiología\"\n}"
+        },
+        "url": "{{baseUrl}}/v1/schedules/specialists/20000000-0000-0000-0000-000000000003/exceptions"
+      }
+    },
+    {
+      "name": "22. Especialista elimina excepción dominical libre (204)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Excepción eliminada correctamente (204)', () => {",
+              "  pm.response.to.have.status(204);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "DELETE",
+        "header": [{ "key": "Authorization", "value": "Bearer {{mendozaToken}}" }],
+        "url": "{{baseUrl}}/v1/schedules/specialists/20000000-0000-0000-0000-000000000003/exceptions/{{createdExceptionId}}"
+      }
+    },
+    {
+      "name": "23. CU-16: KPI AGENDA_ACTIVITY para AdminClinica en GMT-6 (200)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Métrica clínica devuelve sobre AVAILABLE con 6 estados cerrados', () => {",
+              "  pm.response.to.have.status(200);",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.kpiKey).to.eql('AGENDA_ACTIVITY');",
+              "  pm.expect(body.status).to.eql('AVAILABLE');",
+              "  pm.expect(body.data.total).to.be.at.least(3);",
+              "  pm.expect(Object.keys(body.data.byStatus)).to.have.lengthOf(6);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{adminNorteToken}}" }],
+        "url": "{{baseUrl}}/v1/metrics/clinic/activity"
+      }
+    },
+    {
+      "name": "24. CU-16: KPI APPOINTMENT_ACTIVITY para SuperAdmin sin PII (200)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Métrica global devuelve APPOINTMENT_ACTIVITY AVAILABLE sin PII', () => {",
+              "  pm.response.to.have.status(200);",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.kpiKey).to.eql('APPOINTMENT_ACTIVITY');",
+              "  pm.expect(body.status).to.eql('AVAILABLE');",
+              "  pm.expect(Object.keys(body.data.byStatus)).to.have.lengthOf(6);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{superAdminToken}}" }],
+        "url": "{{baseUrl}}/v1/metrics/platform/activity"
+      }
+    }
+  ]
+}
