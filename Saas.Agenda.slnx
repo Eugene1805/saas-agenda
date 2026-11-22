@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Saas.Agenda.Domain/Saas.Agenda.Domain.csproj" />
+    <Project Path="src/Saas.Agenda.Application/Saas.Agenda.Application.csproj" />
+    <Project Path="src/Saas.Agenda.Infrastructure/Saas.Agenda.Infrastructure.csproj" />
+    <Project Path="src/Saas.Agenda.Api/Saas.Agenda.Api.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Saas.Agenda.UnitTests/Saas.Agenda.UnitTests.csproj" />
+  </Folder>
+</Solution>

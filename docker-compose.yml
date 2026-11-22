@@ -1,0 +1,43 @@
+services:
+  agenda-db:
+    image: postgres:17-alpine
+    container_name: vital-agenda-db
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-vital_agenda}
+      POSTGRES_USER: ${POSTGRES_USER:-vital_agenda}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-vital_agenda_dev_pass}
+    ports:
+      - "127.0.0.1:5434:5432"
+    volumes:
+      - agenda_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-vital_agenda} -d ${POSTGRES_DB:-vital_agenda}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  agenda-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: vital-agenda-api
+    depends_on:
+      agenda-db:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__AgendaDb: Host=agenda-db;Port=5432;Database=${POSTGRES_DB:-vital_agenda};Username=${POSTGRES_USER:-vital_agenda};Password=${POSTGRES_PASSWORD:-vital_agenda_dev_pass}
+      Jwt__Issuer: saas-identity
+      Jwt__Audience: vital-saas
+      Jwt__SigningKey: ${JWT_SIGNING_KEY:-VitalIdentityDevSigningKeyChangeInProd2026!}
+      Ports__Http: 8080
+      Platform__Mode: ${PLATFORM_MODE:-Local}
+      AccessControl__Mode: ${ACCESS_CONTROL_MODE:-Local}
+      Directory__Mode: ${DIRECTORY_MODE:-Local}
+      SeedDemoData: ${SEED_DEMO_DATA:-true}
+      OpenApi__Enabled: ${OPENAPI_ENABLED:-true}
+    ports:
+      - "127.0.0.1:8083:8080"
+
+volumes:
+  agenda_pgdata:
