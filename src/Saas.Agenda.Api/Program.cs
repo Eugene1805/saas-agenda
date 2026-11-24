@@ -3,7 +3,6 @@ using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.IdentityModel.Tokens;
-using Npgsql;
 using Saas.Agenda.Api.Endpoints;
 using Saas.Agenda.Api.OpenApi;
 using Saas.Agenda.Infrastructure;
@@ -49,10 +48,11 @@ builder.Services
     });
 
 builder.Services.AddAuthorization();
+builder.Services.AddExceptionHandler<TenantDatabaseExceptionHandler>();
 builder.Services.AddProblemDetails();
 
 var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
-    ?? ["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:4173"];
+    ?? ["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:4173", "http://127.0.0.1:4173"];
 
 builder.Services.AddCors(options =>
 {
@@ -68,7 +68,7 @@ builder.Services.AddAgendaOpenApi();
 
 var app = builder.Build();
 
-await InitializeDatabaseWithRetryAsync(app.Services, app.Logger);
+await InitializeDatabaseWithRetryAsync(app.Services, app.Environment.IsProduction(), app.Logger);
 
 app.UseExceptionHandler();
 app.UseCors("VitalFrontend");
@@ -83,7 +83,10 @@ app.MapMetricsEndpoints();
 
 app.Run();
 
-static async Task InitializeDatabaseWithRetryAsync(IServiceProvider services, ILogger logger)
+static async Task InitializeDatabaseWithRetryAsync(
+    IServiceProvider services,
+    bool isProduction,
+    ILogger logger)
 {
     const int maxAttempts = 10;
     for (var attempt = 1; attempt <= maxAttempts; attempt++)
@@ -92,10 +95,10 @@ static async Task InitializeDatabaseWithRetryAsync(IServiceProvider services, IL
         {
             using var scope = services.CreateScope();
             var initializer = scope.ServiceProvider.GetRequiredService<AgendaDbInitializer>();
-            await initializer.InitializeAsync();
+            await initializer.InitializeConfiguredTenantsAsync(isProduction);
             return;
         }
-        catch (Exception ex) when (ex is NpgsqlException or TimeoutException or InvalidOperationException && attempt < maxAttempts)
+        catch (Exception ex) when (ex is not OperationCanceledException && attempt < maxAttempts)
         {
             logger.LogWarning(
                 ex,
@@ -106,3 +109,5 @@ static async Task InitializeDatabaseWithRetryAsync(IServiceProvider services, IL
         }
     }
 }
+
+public partial class Program;

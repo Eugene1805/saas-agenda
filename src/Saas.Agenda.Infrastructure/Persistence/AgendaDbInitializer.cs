@@ -1,13 +1,17 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Saas.Agenda.Application.Ports;
 using Saas.Agenda.Domain.Common;
 using Saas.Agenda.Domain.Entities;
 using Saas.Agenda.Domain.ValueObjects;
+using Saas.Agenda.Infrastructure.Persistence.Tenancy;
 
 namespace Saas.Agenda.Infrastructure.Persistence;
 
 public sealed class AgendaDbInitializer(
-    AgendaDbContext dbContext,
+    ITenantAgendaDbContextFactory tenantDbContextFactory,
+    ITenantDatabaseMigratorPort tenantDatabaseMigrator,
+    ITenantConnectionResolver tenantConnectionResolver,
     IConfiguration configuration)
 {
     public static readonly Guid NorteTenantId = Guid.Parse("10000000-0000-0000-0000-000000000001");
@@ -29,15 +33,32 @@ public sealed class AgendaDbInitializer(
     public static readonly Guid Pat0104Id = Guid.Parse("30000000-0000-0000-0000-000000000104");
     public static readonly Guid Pat0201Id = Guid.Parse("30000000-0000-0000-0000-000000000201");
 
-    public async Task InitializeAsync(CancellationToken cancellationToken = default)
+    public async Task InitializeConfiguredTenantsAsync(
+        bool isProduction,
+        CancellationToken cancellationToken = default)
     {
-        await dbContext.Database.MigrateAsync(cancellationToken);
+        foreach (var tenantId in tenantConnectionResolver.ListConfiguredTenantIds())
+        {
+            await tenantDatabaseMigrator.EnsureMigratedAsync(tenantId, cancellationToken);
+        }
 
-        var seedDemoData = configuration.GetValue("SeedDemoData", false);
-        if (!seedDemoData)
+        if (isProduction || !configuration.GetValue("SeedDemoData", false))
         {
             return;
         }
+
+        if (!tenantConnectionResolver.TryResolveConnectionString(NorteTenantId, out _))
+        {
+            return;
+        }
+
+        await SeedNorteTenantAsync(cancellationToken);
+    }
+
+    private async Task SeedNorteTenantAsync(CancellationToken cancellationToken)
+    {
+        await tenantDatabaseMigrator.EnsureMigratedAsync(NorteTenantId, cancellationToken);
+        await using var dbContext = tenantDbContextFactory.CreateDbContext(NorteTenantId);
 
         var utcNow = DateTimeOffset.UtcNow;
 

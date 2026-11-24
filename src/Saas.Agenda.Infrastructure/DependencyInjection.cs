@@ -1,4 +1,3 @@
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Saas.Agenda.Application.Ports;
@@ -9,6 +8,7 @@ using Saas.Agenda.Infrastructure.AccessControl;
 using Saas.Agenda.Infrastructure.Directory;
 using Saas.Agenda.Infrastructure.Persistence;
 using Saas.Agenda.Infrastructure.Persistence.Repositories;
+using Saas.Agenda.Infrastructure.Persistence.Tenancy;
 using Saas.Agenda.Infrastructure.Platform;
 using Saas.Agenda.Infrastructure.Security;
 
@@ -20,20 +20,17 @@ public static class DependencyInjection
         this IServiceCollection services,
         IConfiguration configuration)
     {
-        var connectionString = configuration.GetConnectionString("AgendaDb")
-            ?? throw new InvalidOperationException("Falta ConnectionStrings:AgendaDb.");
-
-        services.AddDbContext<AgendaDbContext>(options =>
-            options.UseNpgsql(
-                connectionString,
-                npgsql => npgsql
-                    .MigrationsHistoryTable("__EFMigrationsHistory", "agenda")
-                    .EnableRetryOnFailure()));
-
         services.Configure<JwtOptions>(configuration.GetSection(JwtOptions.SectionName));
         services.Configure<PlatformOptions>(configuration.GetSection(PlatformOptions.SectionName));
         services.Configure<DirectoryOptions>(configuration.GetSection(DirectoryOptions.SectionName));
         services.Configure<AccessControlOptions>(configuration.GetSection(AccessControlOptions.SectionName));
+        services.Configure<TenantDatabasesOptions>(configuration.GetSection(TenantDatabasesOptions.SectionName));
+
+        services.AddSingleton<ITenantConnectionResolver, TenantConnectionResolver>();
+        services.AddSingleton<TenantDataSourcePool>();
+        services.AddSingleton<ITenantAgendaDbContextFactory, NpgsqlTenantAgendaDbContextFactory>();
+        services.AddSingleton<ITenantDatabaseMigratorPort, EfTenantDatabaseMigrator>();
+        services.AddScoped<TenantAgendaDbContextAccessor>();
 
         services.AddSingleton<IClockPort, SystemClockAdapter>();
         services.AddScoped<IAppointmentRepository, EfAppointmentRepository>();

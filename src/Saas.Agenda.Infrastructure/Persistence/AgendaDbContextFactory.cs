@@ -7,8 +7,8 @@ public sealed class AgendaDbContextFactory : IDesignTimeDbContextFactory<AgendaD
 {
     public AgendaDbContext CreateDbContext(string[] args)
     {
-        var connectionString = Environment.GetEnvironmentVariable("ConnectionStrings__AgendaDb")
-            ?? "Host=localhost;Port=5434;Database=vital_agenda;Username=vital_agenda;Password=vital_agenda_dev_pass";
+        var connectionString = Environment.GetEnvironmentVariable("ConnectionStrings__AgendaTenantDesignTimeDb")
+            ?? "Host=localhost;Port=5434;Database=vital_agenda_tenant_designtime";
 
         var optionsBuilder = new DbContextOptionsBuilder<AgendaDbContext>();
         optionsBuilder.UseNpgsql(
