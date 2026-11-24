@@ -7,6 +7,7 @@ COPY src/Saas.Agenda.Application/Saas.Agenda.Application.csproj src/Saas.Agenda.
 COPY src/Saas.Agenda.Infrastructure/Saas.Agenda.Infrastructure.csproj src/Saas.Agenda.Infrastructure/
 COPY src/Saas.Agenda.Api/Saas.Agenda.Api.csproj src/Saas.Agenda.Api/
 COPY tests/Saas.Agenda.UnitTests/Saas.Agenda.UnitTests.csproj tests/Saas.Agenda.UnitTests/
+COPY tests/Saas.Agenda.IntegrationTests/Saas.Agenda.IntegrationTests.csproj tests/Saas.Agenda.IntegrationTests/
 
 RUN dotnet restore Saas.Agenda.slnx
 
@@ -16,7 +17,7 @@ COPY tests/ tests/
 RUN dotnet build Saas.Agenda.slnx -c Release --no-restore
 
 FROM build AS test
-RUN dotnet test Saas.Agenda.slnx -c Release --no-build --verbosity normal
+RUN dotnet test tests/Saas.Agenda.UnitTests/Saas.Agenda.UnitTests.csproj -c Release --no-build --verbosity normal
 
 FROM build AS publish
 RUN dotnet publish src/Saas.Agenda.Api/Saas.Agenda.Api.csproj -c Release --no-restore -o /app/publish /p:UseAppHost=false

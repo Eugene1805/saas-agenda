@@ -5,8 +5,8 @@
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
-    { "key": "baseUrl", "value": "http://localhost:8083" },
-    { "key": "jwtSigningKey", "value": "VitalIdentityDevSigningKeyChangeInProd2026!" },
+    { "key": "baseUrl", "value": "http://127.0.0.1:8083" },
+    { "key": "jwtSigningKey", "value": "CHANGE_ME_SET_JWT_SIGNING_KEY" },
     { "key": "createdAppointmentId", "value": "" },
     { "key": "createdExceptionId", "value": "" }
   ],
@@ -58,7 +58,10 @@
           "pm.variables.set('nextSundayDate', formatGmt6Date(nextSunday));",
           "pm.variables.set('secondMondayDate', formatGmt6Date(secondMonday));",
           "pm.variables.set('yesterdayDate', formatGmt6Date(yesterday));",
-          "const key = pm.variables.get('jwtSigningKey') || 'VitalIdentityDevSigningKeyChangeInProd2026!';",
+          "const key = pm.variables.get('jwtSigningKey');",
+          "if (!key || key.startsWith('CHANGE_ME_')) {",
+          "  throw new Error('Configura jwtSigningKey (entorno Postman o --env-var jwtSigningKey=...) antes de ejecutar la colección.');",
+          "}",
           "pm.variables.set('adminNorteToken', signJwt({ sub: '20000000-0000-0000-0000-000000000002', tenant_id: '10000000-0000-0000-0000-000000000001', role: 'ADMIN_CLINICA', full_name: 'Lic. Mariana Paredes', email: 'admin@norte.vital.demo' }, key));",
           "pm.variables.set('auxNorteToken', signJwt({ sub: '20000000-0000-0000-0000-000000000005', tenant_id: '10000000-0000-0000-0000-000000000001', role: 'AUXILIAR', full_name: 'Enf. Clara Ramírez', email: 'aux.ramirez@norte.vital.demo' }, key));",
           "pm.variables.set('mendozaToken', signJwt({ sub: '20000000-0000-0000-0000-000000000003', tenant_id: '10000000-0000-0000-0000-000000000001', role: 'ESPECIALISTA', full_name: 'Dra. Sofía Mendoza', email: 'dra.mendoza@norte.vital.demo' }, key));",

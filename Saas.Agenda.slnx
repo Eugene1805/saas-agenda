@@ -7,5 +7,6 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Saas.Agenda.UnitTests/Saas.Agenda.UnitTests.csproj" />
+    <Project Path="tests/Saas.Agenda.IntegrationTests/Saas.Agenda.IntegrationTests.csproj" />
   </Folder>
 </Solution>
